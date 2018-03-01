@@ -1,0 +1,7 @@
+[package]
+name = "meep"
+version = "0.0.0"
+description = "Placeholder"
+authors = ["Aaron Weiss <awe@pdgn.co>"]
+
+[dependencies]
