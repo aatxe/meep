@@ -1,8 +1,16 @@
 [package]
 name = "meep"
 version = "0.0.0"
-description = "Placeholder"
+description = "A simple pasting service."
 license = "AGPL-3.0"
 authors = ["Aaron Weiss <awe@pdgn.co>"]
 
 [dependencies]
+dotenv = "0.11"
+dotenv_codegen = "0.11"
+diesel = { version = "1", features = ["sqlite"] }
+r2d2-diesel = "1.0"
+r2d2 = "0.8"
+rocket = "0.3"
+rocket_codegen = "0.3"
+syntect = "2"
