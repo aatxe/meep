@@ -33,10 +33,14 @@ extern crate r2d2_diesel;
 extern crate r2d2;
 extern crate rand;
 extern crate rocket;
+extern crate rocket_contrib;
 extern crate syntect;
 
 use std::borrow::Cow;
+use std::convert::From;
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -45,6 +49,10 @@ use rand::Rng;
 use rocket::{Data, Outcome, Request, State};
 use rocket::http::{RawStr, Status};
 use rocket::request::{self, FromParam, FromRequest};
+use rocket_contrib::Template;
+use syntect::parsing::SyntaxSet;
+use syntect::highlighting::{Color, ThemeSet};
+use syntect::html;
 
 //    __             ___                 __
 //   /\ \          /'___\ __          __/\ \__  __
@@ -99,6 +107,114 @@ impl<'a> FromParam<'a> for PasteId<'a> {
     }
 }
 
+pub struct Extension<'a>(Cow<'a, str>);
+
+impl<'a> FromParam<'a> for Extension<'a> {
+    type Error = &'a RawStr;
+
+    fn from_param(param: &'a RawStr) -> std::result::Result<Extension<'a>, &'a RawStr> {
+        let valid = param.chars().all(|c| {
+            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+        });
+
+        if valid {
+            Ok(Extension(Cow::Borrowed(param)))
+        } else {
+            Err(param)
+        }
+    }
+}
+
+pub struct SyntectPaths {
+    ss_path: Option<PathBuf>,
+    ts_path: Option<PathBuf>,
+}
+
+impl SyntectPaths {
+    pub fn new() -> SyntectPaths {
+        SyntectPaths {
+            ss_path: None,
+            ts_path: None,
+        }
+    }
+
+    pub fn syntaxes<P: AsRef<Path>>(mut self, path: P) -> SyntectPaths {
+        self.ss_path = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    pub fn themes<P: AsRef<Path>>(mut self, path: P) -> SyntectPaths {
+        self.ts_path = Some(path.as_ref().to_path_buf());
+        self
+    }
+}
+
+pub struct Highlighting {
+    paths: Arc<SyntectPaths>,
+}
+
+impl From<SyntectPaths> for Highlighting {
+    fn from(paths: SyntectPaths) -> Self {
+        Highlighting {
+            paths: Arc::new(paths),
+        }
+    }
+}
+
+impl Highlighting {
+    pub fn syntaxes(&self) -> SyntaxSet {
+        self.paths.ss_path.as_ref().ok_or_else(|| ()).and_then(|path| {
+            let mut ss = SyntaxSet::new();
+            ss.load_syntaxes(path, true).map_err(|_| ())?;
+            Ok(ss)
+        }).unwrap_or_else(|()| SyntaxSet::load_defaults_newlines())
+    }
+
+    pub fn themes(&self) -> ThemeSet {
+        self.paths.ss_path.as_ref().ok_or_else(|| ()).and_then(|path| {
+            ThemeSet::load_from_folder(path).map_err(|_| ())
+        }).unwrap_or_else(|()| ThemeSet::load_defaults())
+    }
+}
+
+pub struct Syntaxes(SyntaxSet);
+
+impl<'a, 'r> FromRequest<'a, 'r> for Syntaxes {
+    type Error = ();
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Syntaxes, ()> {
+        let highlighting = request.guard::<State<Highlighting>>()?;
+        Outcome::Success(Syntaxes(highlighting.syntaxes()))
+    }
+}
+
+impl Deref for Syntaxes {
+    type Target = SyntaxSet;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Themes(ThemeSet);
+
+impl<'a, 'r> FromRequest<'a, 'r> for Themes {
+    type Error = ();
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Themes, ()> {
+        let highlighting = request.guard::<State<Highlighting>>()?;
+        Outcome::Success(Themes(highlighting.themes()))
+    }
+}
+
+impl Deref for Themes {
+    type Target = ThemeSet;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 //                 ___
 //   __          /'___\
 //  /\_\    ___ /\ \__/  _ __    __
@@ -109,8 +225,11 @@ impl<'a> FromParam<'a> for PasteId<'a> {
 
 fn main() {
     rocket::ignite()
+        .manage(Highlighting::from(SyntectPaths::new()))
         .manage(init_pool())
-        .mount("/", routes![index, paste, view])
+        .mount("/", routes![index, paste, view, view_highlighted])
+        .catch(errors![not_found])
+        .attach(Template::fairing())
         .launch();
 }
 
@@ -187,11 +306,48 @@ pub fn view(conn: DbConn, pid: PasteId) -> Result<String> {
     Ok(paste.data)
 }
 
+#[get("/<pid>/<ext>")]
+pub fn view_highlighted(
+    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension
+) -> Result<Template> {
+    use models::*;
+    use schema::pastes::dsl::*;
+
+    let paste = pastes.find(pid.0)
+        .first::<Paste>(&*conn)?;
+
+    let theme = themes.themes.get("InspiredGitHub").ok_or_else(|| {
+        failure::err_msg("could not find theme: InspiredGitHub")
+    })?;
+    let syntax = syntaxes.find_syntax_by_extension(&ext.0).or_else(|| {
+        syntaxes.find_syntax_by_first_line(&paste.data)
+    });
+
+    let content = match syntax {
+        Some(syntax) => html::highlighted_snippet_for_string(&paste.data, &syntax, theme),
+        None => paste.data,
+    };
+
+    let bg = theme.settings.background.unwrap_or(Color::WHITE);
+    let bg_color = format!("#{:02x}{:02x}{:02x}", bg.r, bg.g, bg.b);
+
+    let mut cxt = std::collections::HashMap::new();
+    cxt.insert("contents", content);
+    cxt.insert("background", bg_color);
+    Ok(Template::render("hl_view", cxt))
+}
+
+#[error(404)]
+fn not_found(req: &Request) -> Template {
+    let mut map = std::collections::HashMap::new();
+    map.insert("path", req.uri().as_str());
+    Template::render("error/404", &map)
+}
 
 //                        __          ___             
 //                       /\ \        /\_ \            
 //    ___ ___     ___    \_\ \     __\//\ \     ____  
-//  /' __` __`\  / __`\  /'_` \  /'__`\\ \ \   /',__\ 
+//  /' __` __`\  / __`\  /'_` \  /'__`\\ \ \   /',__\
 //  /\ \/\ \/\ \/\ \L\ \/\ \L\ \/\  __/ \_\ \_/\__, `\
 //  \ \_\ \_\ \_\ \____/\ \___,_\ \____\/\____\/\____/
 //   \/_/\/_/\/_/\/___/  \/__,_ /\/____/\/____/\/___/ 
