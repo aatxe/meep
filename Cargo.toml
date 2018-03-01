@@ -2,6 +2,7 @@
 name = "meep"
 version = "0.0.0"
 description = "Placeholder"
+license = "AGPL-3.0"
 authors = ["Aaron Weiss <awe@pdgn.co>"]
 
 [dependencies]
