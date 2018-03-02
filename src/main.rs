@@ -387,7 +387,7 @@ pub fn impl_view_highlighted(
 
     let content = match syntax {
         Some(syntax) => html::highlighted_snippet_for_string(&paste.data, &syntax, theme),
-        None => paste.data,
+        None => format!("<pre>{}</pre>", paste.data),
     };
 
     let bg = theme.settings.background.unwrap_or(Color::WHITE);
