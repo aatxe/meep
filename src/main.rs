@@ -300,7 +300,14 @@ SYNOPSIS
     <command> | curl --data-binary "@-" {root}
 
 DESCRIPTION
-    add ?<lang> to resulting url for line numbers and syntax highlighting
+    add /<ext> to resulting url for syntax highlighting
+    add /<ext>/<theme> to resulting url for syntax highlighting with a specific theme
+
+THEMES
+    default    {theme}
+    gh         InspiredGitHub
+    light      Solarized (light)
+    dark       Solarized (dark)
 
 EXAMPLES
     (meep) cat src/main.rs | curl --data-binary "@-" {root}
@@ -309,7 +316,7 @@ EXAMPLES
 
 SEE ALSO
     http://github.com/aatxe/meep
-"#, root=MEEP_ROOT)
+"#, root=MEEP_ROOT, theme=SYNTECT_THEME)
 }
 
 #[post("/", data = "<data>")]
