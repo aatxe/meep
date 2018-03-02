@@ -62,7 +62,9 @@ use syntect::html;
 //  \ \___,_\ \____\\ \_\  \ \_\ \_\ \_\ \_\ \__\\ \_\ \____/\ \_\ \_\/\____/
 //   \/__,_ /\/____/ \/_/   \/_/\/_/\/_/\/_/\/__/ \/_/\/___/  \/_/\/_/\/___/
 
+pub static MEEP_ROOT: &'static str = dotenv!("MEEP_ROOT");
 pub static DATABASE_URL: &'static str = dotenv!("DATABASE_URL");
+pub static SYNTECT_THEME: &'static str = dotenv!("SYNTECT_THEME");
 
 pub type Result<T> = std::result::Result<T, failure::Error>;
 pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
@@ -248,27 +250,29 @@ pub fn init_pool() -> Pool {
 
 
 #[get("/")]
-pub fn index() -> &'static str {
-    r#"meep(1)                              MEEP                               meep(1)
+pub fn index() -> String {
+    format!(r#"meep(1)                              MEEP                               meep(1)
 
-     dMMMMMMMMb dMMMMMP dMMMMMP dMMMMb
-    dMP"dMP"dMPdMP     dMP     dMP.dMP
-   dMP dMP dMPdMMMP   dMMMP   dMMMMP"
-  dMP dMP dMPdMP     dMP     dMP
- dMP dMP dMPdMMMMMP dMMMMMP dMP
+                       dMMMMMMMMb dMMMMMP dMMMMMP dMMMMb
+                      dMP"dMP"dMPdMP     dMP     dMP.dMP
+                     dMP dMP dMPdMMMP   dMMMP   dMMMMP"
+                    dMP dMP dMPdMP     dMP     dMP
+                   dMP dMP dMPdMMMMMP dMMMMMP dMP
 
 SYNOPSIS
-    <command> | curl --data-binary "@-" https://commie.club/meep
+    <command> | curl --data-binary "@-" {root}
 
 DESCRIPTION
     add ?<lang> to resulting url for line numbers and syntax highlighting
 
 EXAMPLES
-    [to do]
+    (meep) cat src/main.rs | curl --data-binary "@-" {root}
+           {root}/iVse
+    (meep) firefox {root}/iVse/rs
 
 SEE ALSO
     http://github.com/aatxe/meep
-"#
+"#, root=MEEP_ROOT)
 }
 
 #[post("/", data = "<data>")]
@@ -281,7 +285,7 @@ pub fn paste(conn: DbConn, data: Data) -> Result<String> {
     let str_data = String::from_utf8(buf)?;
 
     let id = rand::thread_rng().gen_ascii_chars().take(4).collect();
-    let url = format!("https://commie.club/meep/{}", &id);
+    let url = format!("{}/{}", MEEP_ROOT, &id);
 
     let paste = Paste {
         id: id,
@@ -316,8 +320,8 @@ pub fn view_highlighted(
     let paste = pastes.find(pid.0)
         .first::<Paste>(&*conn)?;
 
-    let theme = themes.themes.get("InspiredGitHub").ok_or_else(|| {
-        failure::err_msg("could not find theme: InspiredGitHub")
+    let theme = themes.themes.get(SYNTECT_THEME).ok_or_else(|| {
+        failure::err_msg(format!("could not find theme: {}", SYNTECT_THEME))
     })?;
     let syntax = syntaxes.find_syntax_by_extension(&ext.0).or_else(|| {
         syntaxes.find_syntax_by_first_line(&paste.data)
