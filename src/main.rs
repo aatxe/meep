@@ -217,6 +217,43 @@ impl Deref for Themes {
     }
 }
 
+#[derive(Copy, Clone)]
+pub enum Theme {
+    InspiredGitHub,
+    SolarizedLight,
+    SolarizedDark,
+}
+
+impl Theme {
+    fn str(&self) -> &'static str {
+        match *self {
+            Theme::InspiredGitHub => "InspiredGitHub",
+            Theme::SolarizedLight => "Solarized (light)",
+            Theme::SolarizedDark  => "Solarized (dark)",
+        }
+    }
+}
+
+impl<'a> FromParam<'a> for Theme {
+    type Error = &'a RawStr;
+
+    fn from_param(param: &'a RawStr) -> std::result::Result<Theme, &'a RawStr> {
+        let branch_str = if param == "default" {
+            SYNTECT_THEME
+        } else {
+            param
+        };
+
+        Ok(match branch_str {
+            "InspiredGitHub" | "gh"    => Theme::InspiredGitHub,
+            "SolarizedLight" | "light" => Theme::SolarizedLight,
+            "SolarizedDark"  | "dark"  => Theme::SolarizedDark,
+
+            _ => return Err(param),
+        })
+    }
+}
+
 //                 ___
 //   __          /'___\
 //  /\_\    ___ /\ \__/  _ __    __
@@ -229,7 +266,7 @@ fn main() {
     rocket::ignite()
         .manage(Highlighting::from(SyntectPaths::new()))
         .manage(init_pool())
-        .mount("/", routes![index, paste, view, view_highlighted])
+        .mount("/", routes![index, paste, view, view_highlighted, view_highlighted_themed])
         .catch(errors![not_found])
         .attach(Template::fairing())
         .launch();
@@ -312,7 +349,21 @@ pub fn view(conn: DbConn, pid: PasteId) -> Result<String> {
 
 #[get("/<pid>/<ext>")]
 pub fn view_highlighted(
-    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension
+    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, 
+) -> Result<Template> {
+    impl_view_highlighted(conn, syntaxes, themes, pid, ext, None)
+}
+
+#[get("/<pid>/<ext>/<theme>")]
+pub fn view_highlighted_themed(
+    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, theme: Theme,
+) -> Result<Template> {
+    impl_view_highlighted(conn, syntaxes, themes, pid, ext, Some(theme))
+}
+
+pub fn impl_view_highlighted(
+    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
+    theme: Option<Theme>,
 ) -> Result<Template> {
     use models::*;
     use schema::pastes::dsl::*;
@@ -320,7 +371,7 @@ pub fn view_highlighted(
     let paste = pastes.find(pid.0)
         .first::<Paste>(&*conn)?;
 
-    let theme = themes.themes.get(SYNTECT_THEME).ok_or_else(|| {
+    let theme = themes.themes.get(theme.map(|t| t.str()).unwrap_or(SYNTECT_THEME)).ok_or_else(|| {
         failure::err_msg(format!("could not find theme: {}", SYNTECT_THEME))
     })?;
     let syntax = syntaxes.find_syntax_by_extension(&ext.0).or_else(|| {
