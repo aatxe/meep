@@ -1,5 +1,7 @@
 [development]
 port = 8080
+template_dir = "templates/"
 
 [production]
 port = 8080
+template_dir = "prod_templates/"

@@ -1,3 +1,4 @@
 *.db
 /target/
 **/*.rs.bk
+prod_templates/
