@@ -44,6 +44,7 @@ use std::sync::Arc;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
+use diesel::result::Error as QueryError;
 use r2d2_diesel::ConnectionManager;
 use rand::Rng;
 use rocket::{Data, Outcome, Request, State};
@@ -267,7 +268,7 @@ fn main() {
         .manage(Highlighting::from(SyntectPaths::new()))
         .manage(init_pool())
         .mount("/", routes![index, paste, view, view_highlighted, view_highlighted_themed])
-        .catch(errors![not_found])
+        .catch(errors![not_found, internal_server_error])
         .attach(Template::fairing())
         .launch();
 }
@@ -284,7 +285,6 @@ pub fn init_pool() -> Pool {
 //  \ \ \//\ \L\ \ \ \_\ \\ \ \_/\  __//\__, `\
 //   \ \_\\ \____/\ \____/ \ \__\ \____\/\____/
 //    \/_/ \/___/  \/___/   \/__/\/____/\/___/
-
 
 #[get("/")]
 pub fn index() -> String {
@@ -344,39 +344,46 @@ pub fn paste(conn: DbConn, data: Data) -> Result<String> {
 }
 
 #[get("/<pid>")]
-pub fn view(conn: DbConn, pid: PasteId) -> Result<String> {
+pub fn view(conn: DbConn, pid: PasteId) -> Result<Option<String>> {
     use models::*;
     use schema::pastes::dsl::*;
 
-    let paste = pastes.find(pid.0)
-        .first::<Paste>(&*conn)?;
+    let paste = match pastes.find(pid.0).first::<Paste>(&*conn) {
+        Ok(res) => res,
+        Err(QueryError::NotFound) => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
 
-    Ok(paste.data)
+    Ok(Some(paste.data))
 }
 
 #[get("/<pid>/<ext>")]
 pub fn view_highlighted(
     conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, 
-) -> Result<Template> {
+) -> Result<Option<Template>> {
     impl_view_highlighted(conn, syntaxes, themes, pid, ext, None)
 }
 
 #[get("/<pid>/<ext>/<theme>")]
 pub fn view_highlighted_themed(
     conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, theme: Theme,
-) -> Result<Template> {
+) -> Result<Option<Template>> {
     impl_view_highlighted(conn, syntaxes, themes, pid, ext, Some(theme))
 }
 
-pub fn impl_view_highlighted(
+// Shared implementation for highlighted view routes.
+fn impl_view_highlighted(
     conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
     theme: Option<Theme>,
-) -> Result<Template> {
+) -> Result<Option<Template>> {
     use models::*;
     use schema::pastes::dsl::*;
 
-    let paste = pastes.find(pid.0)
-        .first::<Paste>(&*conn)?;
+    let paste = match pastes.find(pid.0).first::<Paste>(&*conn) {
+        Ok(res) => res,
+        Err(QueryError::NotFound) => return Ok(None),
+        Err(e) => return Err(e.into()),
+    };
 
     let theme = themes.themes.get(theme.map(|t| t.str()).unwrap_or(SYNTECT_THEME)).ok_or_else(|| {
         failure::err_msg(format!("could not find theme: {}", SYNTECT_THEME))
@@ -396,14 +403,22 @@ pub fn impl_view_highlighted(
     let mut cxt = std::collections::HashMap::new();
     cxt.insert("contents", content);
     cxt.insert("background", bg_color);
-    Ok(Template::render("hl_view", cxt))
+
+    Ok(Some(Template::render("hl_view", cxt)))
 }
 
 #[error(404)]
-fn not_found(req: &Request) -> Template {
+pub fn not_found(req: &Request) -> Template {
     let mut map = std::collections::HashMap::new();
     map.insert("path", req.uri().as_str());
     Template::render("error/404", &map)
+}
+
+#[error(500)]
+pub fn internal_server_error(req: &Request) -> Template {
+    let mut map = std::collections::HashMap::new();
+    map.insert("path", req.uri().as_str());
+    Template::render("error/500", &map)
 }
 
 //                        __          ___             
