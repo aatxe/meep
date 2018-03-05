@@ -301,7 +301,7 @@ SYNOPSIS
 
 DESCRIPTION
     add /<ext> to resulting url for syntax highlighting
-    add /<ext>/<theme> to resulting url for syntax highlighting with a specific theme
+    add /<ext>/<theme> for syntax highlighting with a specific theme
 
 THEMES
     default    {theme}
