@@ -353,7 +353,6 @@ pub fn paste(
     let total_entries = {
         let tmp = load.occupied.load(Ordering::Relaxed);
         if tmp == 0 { // i.e. we haven't loaded the count yet
-            println!("loading total entry count");
             let val = pastes.count().get_result(&*conn)?;
             load.occupied.store(val, Ordering::Relaxed);
             val
