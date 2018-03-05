@@ -28,6 +28,7 @@ extern crate diesel;
 extern crate dotenv;
 #[macro_use]
 extern crate dotenv_codegen;
+#[macro_use]
 extern crate failure;
 extern crate r2d2_diesel;
 extern crate r2d2;
@@ -44,7 +45,7 @@ use std::sync::Arc;
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
-use diesel::result::Error as QueryError;
+use diesel::result::{Error as QueryError, DatabaseErrorKind};
 use r2d2_diesel::ConnectionManager;
 use rand::Rng;
 use rocket::{Data, Outcome, Request, State};
@@ -328,17 +329,29 @@ pub fn paste(conn: DbConn, data: Data) -> Result<String> {
     let _ = data.stream_to(&mut buf)?;
     let str_data = String::from_utf8(buf)?;
 
-    let id = rand::thread_rng().gen_ascii_chars().take(4).collect();
-    let url = format!("{}/{}", MEEP_ROOT, &id);
+    let mut url;
+    while {
+        let id = rand::thread_rng().gen_ascii_chars().take(4).collect();
+        url = format!("{}/{}", MEEP_ROOT, &id);
 
-    let paste = Paste {
-        id: id,
-        data: str_data,
-    };
+        let paste = Paste {
+            id: id,
+            data: str_data.clone(),
+        };
 
-    diesel::insert_into(pastes::table)
-        .values(&paste)
-        .execute(&*conn)?;
+        let res = diesel::insert_into(pastes::table)
+            .values(&paste)
+            .execute(&*conn);
+
+        match res {
+            // insertion was successful, don't retry.
+            Ok(_) => false,
+            // insertion failed due to primary key constraints, retry.
+            Err(QueryError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => true,
+            // insertion failed for some other reason, bail.
+            Err(e) => bail!(e),
+        }
+    } { continue }
 
     Ok(url)
 }
