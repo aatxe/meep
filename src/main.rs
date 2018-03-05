@@ -20,7 +20,7 @@
 //! You should have received a copy of the GNU Affero General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(custom_derive, plugin)]
+#![feature(custom_derive, integer_atomics, plugin)]
 #![plugin(rocket_codegen)]
 
 #[macro_use]
@@ -42,6 +42,7 @@ use std::convert::From;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
@@ -256,6 +257,26 @@ impl<'a> FromParam<'a> for Theme {
     }
 }
 
+pub struct Load {
+    occupied: AtomicI64,
+}
+
+impl Load {
+    pub fn new() -> Load {
+        Load { occupied: AtomicI64::new(0) }
+    }
+}
+
+pub struct KeyLength {
+    length: AtomicU8,
+}
+
+impl KeyLength {
+    pub fn new() -> KeyLength {
+        KeyLength { length: AtomicU8::new(4) }
+    }
+}
+
 //                 ___
 //   __          /'___\
 //  /\_\    ___ /\ \__/  _ __    __
@@ -266,6 +287,8 @@ impl<'a> FromParam<'a> for Theme {
 
 fn main() {
     rocket::ignite()
+        .manage(Load::new())
+        .manage(KeyLength::new())
         .manage(Highlighting::from(SyntectPaths::new()))
         .manage(init_pool())
         .mount("/", routes![index, paste, view, view_highlighted, view_highlighted_themed])
@@ -320,26 +343,50 @@ SEE ALSO
 "#, root=MEEP_ROOT, theme=SYNTECT_THEME)
 }
 
-#[post("/", data = "<data>")]
-pub fn paste(conn: DbConn, data: Data) -> Result<String> {
+#[post("/", data = "<in_data>")]
+pub fn paste(
+    conn: DbConn, load: State<Load>, key_len: State<KeyLength>, in_data: Data
+) -> Result<String> {
     use models::*;
-    use schema::*;
+    use schema::pastes::dsl::*;
+
+    let total_entries = {
+        let tmp = load.occupied.load(Ordering::Relaxed);
+        if tmp == 0 { // i.e. we haven't loaded the count yet
+            println!("loading total entry count");
+            let val = pastes.count().get_result(&*conn)?;
+            load.occupied.store(val, Ordering::Relaxed);
+            val
+        } else {
+            tmp
+        }
+    };
+    let max_entries = i64::pow(62, u32::from(key_len.length.load(Ordering::Relaxed)));
+
+    // total_entries >= 0.75 * max_entries, but without the floating point
+    // i.e. if our load factor is more than 0.75, increase the key size to prevent high collisions.
+    // at load 0.75, ~1% chance of taking more than 16 attempts to find an unused key.
+    let key_length = if total_entries / 3 >= max_entries / 4 {
+        key_len.length.fetch_add(1, Ordering::Relaxed) + 1
+    } else {
+        key_len.length.load(Ordering::Relaxed)
+    };
 
     let mut buf = Vec::new();
-    let _ = data.stream_to(&mut buf)?;
+    let _ = in_data.stream_to(&mut buf)?;
     let str_data = String::from_utf8(buf)?;
 
     let mut url;
     while {
-        let id = rand::thread_rng().gen_ascii_chars().take(4).collect();
-        url = format!("{}/{}", MEEP_ROOT, &id);
+        let ident = rand::thread_rng().gen_ascii_chars().take(usize::from(key_length)).collect();
+        url = format!("{}/{}", MEEP_ROOT, &ident);
 
         let paste = Paste {
-            id: id,
+            id: ident,
             data: str_data.clone(),
         };
 
-        let res = diesel::insert_into(pastes::table)
+        let res = diesel::insert_into(pastes)
             .values(&paste)
             .execute(&*conn);
 
@@ -353,6 +400,8 @@ pub fn paste(conn: DbConn, data: Data) -> Result<String> {
         }
     } { continue }
 
+    // we've successfully inserted a new row, so increase the occupied entries count.
+    load.occupied.fetch_add(1, Ordering::Relaxed);
     Ok(url)
 }
 
