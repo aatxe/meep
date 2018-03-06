@@ -1,6 +1,8 @@
 # meep
 
-A simple pasting service with syntax highlighting.
+A simple pasting service with syntax highlighting powered by [Rocket][rocket].
+
+[rocket]: https://rocket.rs/
 
 ## License
 
