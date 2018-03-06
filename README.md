@@ -1,6 +1,6 @@
 # meep
 
-A simple pasting service.
+A simple pasting service with syntax highlighting.
 
 ## License
 
