@@ -39,6 +39,7 @@ extern crate syntect;
 
 use std::borrow::Cow;
 use std::convert::From;
+use std::iter;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -68,6 +69,7 @@ use syntect::html;
 pub static MEEP_ROOT: &'static str = dotenv!("MEEP_ROOT");
 pub static DATABASE_URL: &'static str = dotenv!("DATABASE_URL");
 pub static SYNTECT_THEME: &'static str = dotenv!("SYNTECT_THEME");
+pub static MAN_WIDTH: usize = 78;
 
 pub type Result<T> = std::result::Result<T, failure::Error>;
 pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
@@ -312,7 +314,34 @@ pub fn init_pool() -> Pool {
 
 #[get("/")]
 pub fn index() -> String {
-    format!(r#"meep(1)                              MEEP                               meep(1)
+    let header = {
+        let mut str = String::with_capacity(MAN_WIDTH);
+        let base = "meep(1)";
+        let centered = "MEEP";
+        str.push_str(base);
+        let spacing = MAN_WIDTH - (base.len() * 2) - centered.len();
+        let spaces: String = iter::repeat(' ').take(spacing / 2).collect();
+        str.push_str(&spaces);
+        str.push_str(centered);
+        str.push_str(&spaces);
+        str.push_str(base);
+        str
+    };
+
+    let footer = {
+        let mut str = String::with_capacity(MAN_WIDTH);
+        str.push_str("meep ");
+        str.push_str(env!("CARGO_PKG_VERSION"));
+        let end = "meep(1)";
+        let spacing = MAN_WIDTH - str.len() - end.len();
+        str.push_str(
+            &iter::repeat(' ').take(spacing).collect::<String>()
+        );
+        str.push_str(end);
+        str
+    };
+
+    format!(r#"{header}
 
                        dMMMMMMMMb dMMMMMP dMMMMMP dMMMMb
                       dMP"dMP"dMPdMP     dMP     dMP.dMP
@@ -340,7 +369,8 @@ EXAMPLES
 
 SEE ALSO
     https://github.com/aatxe/meep
-"#, root=MEEP_ROOT, theme=SYNTECT_THEME)
+
+{footer}"#, root=MEEP_ROOT, theme=SYNTECT_THEME, header=header, footer=footer)
 }
 
 #[post("/", data = "<in_data>")]
