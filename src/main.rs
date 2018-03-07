@@ -339,7 +339,7 @@ EXAMPLES
     (meep) firefox {root}/iVse/rs
 
 SEE ALSO
-    http://github.com/aatxe/meep
+    https://github.com/aatxe/meep
 "#, root=MEEP_ROOT, theme=SYNTECT_THEME)
 }
 
