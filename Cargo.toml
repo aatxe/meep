@@ -2,8 +2,15 @@
 name = "meep"
 version = "0.0.0"
 description = "A simple pasting service."
-license = "AGPL-3.0"
 authors = ["Aaron Weiss <awe@pdgn.co>"]
+license = "AGPL-3.0"
+keywords = ["pasting", "pastebin"]
+categories = ["web-programming"]
+repository = "https://github.com/aatxe/meep"
+readme = "README.md"
+
+[badges]
+travis-ci = { repository = "aatxe/meep" }
 
 [dependencies]
 dotenv = "0.11"

@@ -1,8 +1,50 @@
-# meep
+# meep [![Build Status][ci-badge]][ci] [![Crates-io][cr-badge]][cr] [![Built with Spacemacs][bws]][sm]
 
-A simple pasting service with syntax highlighting powered by [Rocket][rocket].
+[ci-badge]: https://travis-ci.org/aatxe/meep.svg
+[ci]: https://travis-ci.org/aatxe/meep
+[cr-badge]: https://img.shields.io/crates/v/meep.svg
+[cr]: https://crates.io/crates/meep
+[bws]: https://cdn.rawgit.com/syl20bnr/spacemacs/442d025779da2f62fc86c2082703697714db6514/assets/spacemacs-badge.svg
+[sm]: http://spacemacs.org
+
+A simple pasting service powered by [Rocket][rocket].
 
 [rocket]: https://rocket.rs/
+
+## Manpage
+
+```
+meep(1)                              MEEP                              meep(1)
+
+                       dMMMMMMMMb dMMMMMP dMMMMMP dMMMMb
+                      dMP"dMP"dMPdMP     dMP     dMP.dMP
+                     dMP dMP dMPdMMMP   dMMMP   dMMMMP"
+                    dMP dMP dMPdMP     dMP     dMP
+                   dMP dMP dMPdMMMMMP dMMMMMP dMP
+
+SYNOPSIS
+    <command> | curl --data-binary "@-" $MEEP_ROOT
+
+DESCRIPTION
+    add /<ext> to resulting url for syntax highlighting
+    add /<ext>/<theme> for syntax highlighting with a specific theme
+
+THEMES
+    default    $SYNTECT_THEME
+    gh         InspiredGitHub
+    light      Solarized (light)
+    dark       Solarized (dark)
+
+EXAMPLES
+    (meep) cat src/main.rs | curl --data-binary "@-" $MEEP_ROOT
+           $MEEP_ROOT/iVse
+    (meep) firefox $MEEP_ROOT/iVse/rs
+
+SEE ALSO
+    https://github.com/aatxe/meep
+
+meep 0.0.0                                                             meep(1)
+```
 
 ## License
 
