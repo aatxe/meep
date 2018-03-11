@@ -350,7 +350,7 @@ pub fn index() -> String {
                    dMP dMP dMPdMMMMMP dMMMMMP dMP
 
 SYNOPSIS
-    <command> | curl --data-binary "@-" {root}
+    <command> | curl --data-binary "@-" {root}/
 
 DESCRIPTION
     add /<ext> to resulting url for syntax highlighting
@@ -363,7 +363,7 @@ THEMES
     dark       Solarized (dark)
 
 EXAMPLES
-    (meep) cat src/main.rs | curl --data-binary "@-" {root}
+    (meep) cat src/main.rs | curl --data-binary "@-" {root}/
            {root}/iVse
     (meep) firefox {root}/iVse/rs
 
