@@ -174,7 +174,7 @@ impl Highlighting {
             let mut ss = SyntaxSet::new();
             ss.load_syntaxes(path, true).map_err(|_| ())?;
             Ok(ss)
-        }).unwrap_or_else(|()| SyntaxSet::load_defaults_newlines())
+        }).unwrap_or_else(|()| SyntaxSet::load_defaults_nonewlines())
     }
 
     pub fn themes(&self) -> ThemeSet {
