@@ -173,7 +173,7 @@ impl Highlighting {
     pub fn syntaxes(&self) -> SyntaxSet {
         self.paths.ss_path.as_ref().ok_or_else(|| ()).and_then(|path| {
             let mut ss = SyntaxSet::load_defaults_nonewlines();
-            ss.load_syntaxes(path, true).map_err(|_| ())?;
+            ss.load_syntaxes(path, false).map_err(|_| ())?;
             ss.link_syntaxes();
             Ok(ss)
         }).unwrap_or_else(|()| SyntaxSet::load_defaults_nonewlines())
