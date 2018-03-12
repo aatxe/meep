@@ -69,6 +69,7 @@ use syntect::html;
 pub static MEEP_ROOT: &'static str = dotenv!("MEEP_ROOT");
 pub static DATABASE_URL: &'static str = dotenv!("DATABASE_URL");
 pub static SYNTECT_THEME: &'static str = dotenv!("SYNTECT_THEME");
+pub static SYNTAX_PATH: &'static str = dotenv!("SYNTAX_PATH");
 pub static MAN_WIDTH: usize = 78;
 
 pub type Result<T> = std::result::Result<T, failure::Error>;
@@ -121,7 +122,7 @@ impl<'a> FromParam<'a> for Extension<'a> {
 
     fn from_param(param: &'a RawStr) -> std::result::Result<Extension<'a>, &'a RawStr> {
         let valid = param.chars().all(|c| {
-            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+            (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.'
         });
 
         if valid {
@@ -171,14 +172,15 @@ impl From<SyntectPaths> for Highlighting {
 impl Highlighting {
     pub fn syntaxes(&self) -> SyntaxSet {
         self.paths.ss_path.as_ref().ok_or_else(|| ()).and_then(|path| {
-            let mut ss = SyntaxSet::new();
+            let mut ss = SyntaxSet::load_defaults_nonewlines();
             ss.load_syntaxes(path, true).map_err(|_| ())?;
+            ss.link_syntaxes();
             Ok(ss)
         }).unwrap_or_else(|()| SyntaxSet::load_defaults_nonewlines())
     }
 
     pub fn themes(&self) -> ThemeSet {
-        self.paths.ss_path.as_ref().ok_or_else(|| ()).and_then(|path| {
+        self.paths.ts_path.as_ref().ok_or_else(|| ()).and_then(|path| {
             ThemeSet::load_from_folder(path).map_err(|_| ())
         }).unwrap_or_else(|()| ThemeSet::load_defaults())
     }
@@ -291,7 +293,7 @@ fn main() {
     rocket::ignite()
         .manage(Load::new())
         .manage(KeyLength::new())
-        .manage(Highlighting::from(SyntectPaths::new()))
+        .manage(Highlighting::from(SyntectPaths::new().syntaxes(SYNTAX_PATH)))
         .manage(init_pool())
         .mount("/", routes![index, paste, view, view_highlighted, view_highlighted_themed])
         .catch(errors![not_found, internal_server_error])
