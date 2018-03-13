@@ -15,8 +15,9 @@ A simple pasting service powered by [Rocket][rocket].
 
 Setting up a new instance is easy, but it requires using Rust nightly.
 
-1. Install `meep` with `cargo` via `cargo +nightly install meep`.
-    - If you're not using `rustup` but still have nightly, use `cargo install meep` instead.
+1. Install `meep` with `cargo` via `cargo +nightly install --force meep`.
+    - If you're not using `rustup` but still have nightly, use `cargo install --force meep` instead.
+    - The `--force` flag ensures that you'll update any current installations to the latest version.
 2. Run `meep` in a directory where you want it to create `meep.toml` and `meep.db`.
     - You can also create a `Rocket.toml` which can be useful, e.g. for setting production templates.
     - You can set a specific path for the configuration with the `MEEP_CONFIG` environment variable.
