@@ -3,3 +3,4 @@
 **/*.rs.bk
 prod_templates/
 syntaxes/
+meep.toml
