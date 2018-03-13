@@ -94,6 +94,13 @@ SEE ALSO
 meep 0.0.0                                                             meep(1)
 ```
 
+## Versioning
+
+`meep` uses [semantic versioning](https://semver.org) tied to its Web API. Thus, major number
+changes correspond to changes to the validity of existing routes, while minor number changes
+correspond to the addition of new routes. Patch number changes will correspond to any changes that
+do not affect the Web API.
+
 ## License
 
 ```
