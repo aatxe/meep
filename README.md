@@ -26,6 +26,7 @@ Setting up a new instance is easy, but it requires using Rust nightly.
     - You can use the default templates in the repository as a starting point.
 4. Edit the configuration in `meep.toml` and then re-run `meep`.
     - You should always run production instances with `ROCKET_ENV` set to `production`.
+    - You should also make sure to deploy `meep` behind a proxy through `nginx` or `apache`.
 
 ## Example Configurations
 
