@@ -16,15 +16,15 @@ A simple pasting service powered by [Rocket][rocket].
 Setting up a new instance is easy, but it requires using Rust nightly.
 
 1. Install `meep` with `cargo` via `cargo +nightly install meep`.
-  - If you're not using `rustup` but still have nightly, use `cargo install meep` instead.
+    - If you're not using `rustup` but still have nightly, use `cargo install meep` instead.
 2. Run `meep` in a directory where you want it to create `meep.toml` and `meep.db`.
-  - You can also create a `Rocket.toml` which can be useful, e.g. for setting production templates.
-  - You can set a specific path for the configuration with the `MEEP_CONFIG` environment variable.
+    - You can also create a `Rocket.toml` which can be useful, e.g. for setting production templates.
+    - You can set a specific path for the configuration with the `MEEP_CONFIG` environment variable.
 3. Install a set of templates to use in `templates/` within your working directory.
-  - You can configure this path in `Rocket.toml` (including per-environment).
-  - You can use the default templates in the repository as a starting point.
+    - You can configure this path in `Rocket.toml` (including per-environment).
+    - You can use the default templates in the repository as a starting point.
 4. Edit the configuration in `meep.toml` and then re-run `meep`.
-  - You should always run production instances with `ROCKET_ENV` set to `production`.
+    - You should always run production instances with `ROCKET_ENV` set to `production`.
 
 ## Example Configurations
 
