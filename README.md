@@ -26,11 +26,14 @@ SYNOPSIS
     <command> | curl --data-binary "@-" $MEEP_ROOT
 
 DESCRIPTION
+    Simply POST data to $MEEP_ROOT to paste
+
+OPTIONS
     add /<ext> to resulting url for syntax highlighting
     add /<ext>/<theme> for syntax highlighting with a specific theme
 
 THEMES
-    default    $SYNTECT_THEME
+    default    $DEFAULT_THEME
     gh         InspiredGitHub
     light      Solarized (light)
     dark       Solarized (dark)
@@ -39,6 +42,9 @@ EXAMPLES
     (meep) cat src/main.rs | curl --data-binary "@-" $MEEP_ROOT
            $MEEP_ROOT/iVse
     (meep) firefox $MEEP_ROOT/iVse/rs
+
+MAINTAINER
+    Instance maintained by $MAINTAINER <$MAINTAINER_EMAIL>
 
 SEE ALSO
     https://github.com/aatxe/meep

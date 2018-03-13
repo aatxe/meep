@@ -77,6 +77,9 @@ pub static MAN_WIDTH: usize = 78;
 fn mk_unknown() -> String { "unknown".to_owned() }
 fn default_meep_root() -> String { "http://localhost:8080".to_owned() }
 
+pub type Result<T> = std::result::Result<T, failure::Error>;
+pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Config {
@@ -129,9 +132,6 @@ impl Deref for Conf {
         &self.0
     }
 }
-
-pub type Result<T> = std::result::Result<T, failure::Error>;
-pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
 pub struct DbConn(pub r2d2::PooledConnection<ConnectionManager<SqliteConnection>>);
 
@@ -315,18 +315,13 @@ impl<'a> FromParam<'a> for Theme {
     }
 }
 
-pub struct Load {
-    occupied: AtomicI64,
-}
+pub struct Load { occupied: AtomicI64 }
+pub struct KeyLength { length: AtomicU8 }
 
 impl Load {
     pub fn new() -> Load {
         Load { occupied: AtomicI64::new(0) }
     }
-}
-
-pub struct KeyLength {
-    length: AtomicU8,
 }
 
 impl KeyLength {
