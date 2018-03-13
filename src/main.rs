@@ -26,6 +26,8 @@
 #[macro_use]
 extern crate diesel;
 #[macro_use]
+extern crate diesel_migrations;
+#[macro_use]
 extern crate dotenv_codegen;
 #[macro_use]
 extern crate failure;
@@ -73,6 +75,7 @@ use syntect::html;
 //  \ \___,_\ \____\\ \_\  \ \_\ \_\ \_\ \_\ \__\\ \_\ \____/\ \_\ \_\/\____/
 //   \/__,_ /\/____/ \/_/   \/_/\/_/\/_/\/_/\/__/ \/_/\/___/  \/_/\/_/\/___/
 
+embed_migrations!();
 pub static MAN_WIDTH: usize = 78;
 fn mk_unknown() -> String { "unknown".to_owned() }
 fn default_meep_root() -> String { "http://localhost:8080".to_owned() }
@@ -352,12 +355,25 @@ fn main() {
                 extra_syntaxes_path: dotenv!("SYNTAX_PATH").to_owned(),
             };
             cfg.save(&path).unwrap_or_else(|_| {
-                eprintln!("failed to save default config: {}", path);
+                eprintln!("failed to save default config to {}", path);
                 process::exit(1);
             });
-            cfg
+            println!("wrote out a default configuration to {}", path);
+            println!("please edit the configuration and rerun meep");
+            process::exit(0);
         }
     };
+
+    let connection = SqliteConnection::establish(&config.database_url).unwrap_or_else(|e| {
+        eprintln!("failed to connect to database at {}", &config.database_url);
+        eprintln!("error: {}", e);
+        process::exit(1);
+    });
+    embedded_migrations::run(&connection).unwrap_or_else(|e| {
+        eprintln!("failed to configure database at {}", &config.database_url);
+        eprintln!("error: {}", e);
+        process::exit(1);
+    });
 
     rocket::ignite()
         .manage(Load::new())
