@@ -453,7 +453,10 @@ dependencies = [
  "rocket 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket_codegen 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "rocket_contrib 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.30 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.30 (registry+https://github.com/rust-lang/crates.io-index)",
  "syntect 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "toml 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

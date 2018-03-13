@@ -35,13 +35,21 @@ extern crate r2d2;
 extern crate rand;
 extern crate rocket;
 extern crate rocket_contrib;
+extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate syntect;
+extern crate toml;
 
 use std::borrow::Cow;
 use std::convert::From;
+use std::env;
+use std::fs::File;
 use std::iter;
+use std::io::prelude::*;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::process;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 
@@ -66,11 +74,62 @@ use syntect::html;
 //  \ \___,_\ \____\\ \_\  \ \_\ \_\ \_\ \_\ \__\\ \_\ \____/\ \_\ \_\/\____/
 //   \/__,_ /\/____/ \/_/   \/_/\/_/\/_/\/_/\/__/ \/_/\/___/  \/_/\/_/\/___/
 
-pub static MEEP_ROOT: &'static str = dotenv!("MEEP_ROOT");
-pub static DATABASE_URL: &'static str = dotenv!("DATABASE_URL");
-pub static SYNTECT_THEME: &'static str = dotenv!("SYNTECT_THEME");
-pub static SYNTAX_PATH: &'static str = dotenv!("SYNTAX_PATH");
 pub static MAN_WIDTH: usize = 78;
+fn mk_unknown() -> String { "unknown".to_owned() }
+fn default_meep_root() -> String { "http://localhost:8080".to_owned() }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Config {
+    #[serde(default = "mk_unknown")]
+    maintainer: String,
+    #[serde(default = "mk_unknown")]
+    maintainer_email: String,
+
+    #[serde(default = "default_meep_root")]
+    meep_root: String,
+    database_url: String,
+    default_theme: String,
+    extra_syntaxes_path: String,
+}
+
+impl Config {
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Config> {
+        let contents = File::open(&path).and_then(|mut file| {
+            let mut buf = String::new();
+            file.read_to_string(&mut buf).map(|_| buf)
+        })?;
+
+        Ok(toml::from_str(&contents[..])?)
+    }
+
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let mut file = File::create(&path)?;
+        let contents = toml::to_string(self)?;
+        file.write_all(contents.as_bytes())?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Conf(Arc<Config>);
+
+impl<'a, 'r> FromRequest<'a, 'r> for Conf {
+    type Error = ();
+
+    fn from_request(request: &'a Request<'r>) -> request::Outcome<Conf, ()> {
+        let conf = request.guard::<State<Conf>>()?;
+        Outcome::Success(conf.clone())
+    }
+}
+
+impl Deref for Conf {
+    type Target = Config;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub type Result<T> = std::result::Result<T, failure::Error>;
 pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
@@ -226,17 +285,19 @@ impl Deref for Themes {
 
 #[derive(Copy, Clone)]
 pub enum Theme {
+    Default,
     InspiredGitHub,
     SolarizedLight,
     SolarizedDark,
 }
 
 impl Theme {
-    fn str(&self) -> &'static str {
+    fn str(&self) -> Option<&'static str> {
         match *self {
-            Theme::InspiredGitHub => "InspiredGitHub",
-            Theme::SolarizedLight => "Solarized (light)",
-            Theme::SolarizedDark  => "Solarized (dark)",
+            Theme::Default => None,
+            Theme::InspiredGitHub => Some("InspiredGitHub"),
+            Theme::SolarizedLight => Some("Solarized (light)"),
+            Theme::SolarizedDark  => Some("Solarized (dark)"),
         }
     }
 }
@@ -245,13 +306,7 @@ impl<'a> FromParam<'a> for Theme {
     type Error = &'a RawStr;
 
     fn from_param(param: &'a RawStr) -> std::result::Result<Theme, &'a RawStr> {
-        let branch_str = if param == "default" {
-            SYNTECT_THEME
-        } else {
-            param
-        };
-
-        Ok(match branch_str {
+        Ok(match &param.url_decode().map_err(|_| param)?[..] {
             "InspiredGitHub" | "gh"    => Theme::InspiredGitHub,
             "SolarizedLight" | "light" => Theme::SolarizedLight,
             "SolarizedDark"  | "dark"  => Theme::SolarizedDark,
@@ -290,19 +345,40 @@ impl KeyLength {
 //     \/_/\/_/\/_/\/_/   \/_/ \/__/\/_/
 
 fn main() {
+    let path = env::var("MEEP_CONFIG").unwrap_or_else(|_| "meep.toml".to_owned());
+    let config = match Config::load(&path) {
+        Ok(cfg) => cfg,
+        Err(_) => {
+            let cfg = Config {
+                maintainer: "unknown".to_owned(),
+                maintainer_email: "unknown".to_owned(),
+                meep_root: dotenv!("MEEP_ROOT").to_owned(),
+                database_url: dotenv!("DATABASE_URL").to_owned(),
+                default_theme: dotenv!("SYNTECT_THEME").to_owned(),
+                extra_syntaxes_path: dotenv!("SYNTAX_PATH").to_owned(),
+            };
+            cfg.save(&path).unwrap_or_else(|_| {
+                eprintln!("failed to save default config: {}", path);
+                process::exit(1);
+            });
+            cfg
+        }
+    };
+
     rocket::ignite()
         .manage(Load::new())
         .manage(KeyLength::new())
-        .manage(Highlighting::from(SyntectPaths::new().syntaxes(SYNTAX_PATH)))
-        .manage(init_pool())
+        .manage(Highlighting::from(SyntectPaths::new().syntaxes(&config.extra_syntaxes_path)))
+        .manage(init_pool(&config))
+        .manage(Conf(Arc::new(config)))
         .mount("/", routes![index, paste, view, view_highlighted, view_highlighted_themed])
         .catch(errors![not_found, internal_server_error])
         .attach(Template::fairing())
         .launch();
 }
 
-pub fn init_pool() -> Pool {
-    let manager = ConnectionManager::<SqliteConnection>::new(DATABASE_URL);
+pub fn init_pool(config: &Config) -> Pool {
+    let manager = ConnectionManager::<SqliteConnection>::new(config.database_url.clone());
     r2d2::Pool::new(manager).expect("failed to create db pool")
 }
 
@@ -315,7 +391,7 @@ pub fn init_pool() -> Pool {
 //    \/_/ \/___/  \/___/   \/__/\/____/\/___/
 
 #[get("/")]
-pub fn index() -> String {
+pub fn index(conf: Conf) -> String {
     let header = {
         let mut str = String::with_capacity(MAN_WIDTH);
         let base = "meep(1)";
@@ -355,6 +431,9 @@ SYNOPSIS
     <command> | curl --data-binary "@-" {root}/
 
 DESCRIPTION
+    Simply POST data to {root}/ to paste
+
+OPTIONS
     add /<ext> to resulting url for syntax highlighting
     add /<ext>/<theme> for syntax highlighting with a specific theme
 
@@ -369,15 +448,21 @@ EXAMPLES
            {root}/iVse
     (meep) firefox {root}/iVse/rs
 
+MAINTAINER
+    Instance maintained by {maintainer} <{email}>
+
 SEE ALSO
     https://github.com/aatxe/meep
 
-{footer}"#, root=MEEP_ROOT, theme=SYNTECT_THEME, header=header, footer=footer)
+{footer}"#,
+            root=&conf.meep_root, theme=&conf.default_theme, header=header, footer=footer,
+            maintainer=&conf.maintainer, email=&conf.maintainer_email,
+    )
 }
 
 #[post("/", data = "<in_data>")]
 pub fn paste(
-    conn: DbConn, load: State<Load>, key_len: State<KeyLength>, in_data: Data
+    conf: Conf, conn: DbConn, load: State<Load>, key_len: State<KeyLength>, in_data: Data
 ) -> Result<String> {
     use models::*;
     use schema::pastes::dsl::*;
@@ -410,7 +495,7 @@ pub fn paste(
     let mut url;
     while {
         let ident = rand::thread_rng().gen_ascii_chars().take(usize::from(key_length)).collect();
-        url = format!("{}/{}", MEEP_ROOT, &ident);
+        url = format!("{}/{}", &conf.meep_root, &ident);
 
         let paste = Paste {
             id: ident,
@@ -452,21 +537,22 @@ pub fn view(conn: DbConn, pid: PasteId) -> Result<Option<String>> {
 
 #[get("/<pid>/<ext>")]
 pub fn view_highlighted(
-    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, 
+    conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, 
 ) -> Result<Option<Template>> {
-    impl_view_highlighted(conn, syntaxes, themes, pid, ext, None)
+    impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, None)
 }
 
 #[get("/<pid>/<ext>/<theme>")]
 pub fn view_highlighted_themed(
-    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, theme: Theme,
+    conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
+    theme: Theme,
 ) -> Result<Option<Template>> {
-    impl_view_highlighted(conn, syntaxes, themes, pid, ext, Some(theme))
+    impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, Some(theme))
 }
 
 // Shared implementation for highlighted view routes.
 fn impl_view_highlighted(
-    conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
+    conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
     theme: Option<Theme>,
 ) -> Result<Option<Template>> {
     use models::*;
@@ -478,8 +564,9 @@ fn impl_view_highlighted(
         Err(e) => return Err(e.into()),
     };
 
-    let theme = themes.themes.get(theme.map(|t| t.str()).unwrap_or(SYNTECT_THEME)).ok_or_else(|| {
-        failure::err_msg(format!("could not find theme: {}", SYNTECT_THEME))
+    let theme_name = theme.and_then(|t| t.str()).unwrap_or(&conf.default_theme);
+    let theme = themes.themes.get(theme_name).ok_or_else(|| {
+        failure::err_msg(format!("could not find theme: {}", &conf.default_theme))
     })?;
     let syntax = syntaxes.find_syntax_by_extension(&ext.0).or_else(|| {
         syntaxes.find_syntax_by_first_line(&paste.data)
