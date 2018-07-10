@@ -547,7 +547,7 @@ pub fn view(conn: DbConn, pid: PasteId) -> Result<Option<String>> {
 
 #[get("/<pid>/<ext>")]
 pub fn view_highlighted(
-    conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension, 
+    conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
 ) -> Result<Option<Template>> {
     impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, None)
 }
