@@ -5,7 +5,7 @@
 //! dMP dMP dMPdMMMMMP dMMMMMP dMP
 //!
 //! meep - a simple pasting service
-//! Copyright (C) 2018 Aaron Weiss
+//! Copyright (C) 2018-2019 Aaron Weiss
 //!
 //! This program is free software: you can redistribute it and/or modify
 //! it under the terms of the GNU Affero General Public License as published by
@@ -20,27 +20,12 @@
 //! You should have received a copy of the GNU Affero General Public License
 //! along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#![feature(custom_derive, integer_atomics, plugin)]
-#![plugin(rocket_codegen)]
+#![feature(proc_macro_hygiene, decl_macro, integer_atomics)]
 
 #[macro_use]
 extern crate diesel;
 #[macro_use]
 extern crate diesel_migrations;
-#[macro_use]
-extern crate dotenv_codegen;
-#[macro_use]
-extern crate failure;
-extern crate r2d2_diesel;
-extern crate r2d2;
-extern crate rand;
-extern crate rocket;
-extern crate rocket_contrib;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate syntect;
-extern crate toml;
 
 use std::borrow::Cow;
 use std::convert::From;
@@ -57,12 +42,16 @@ use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel::result::{Error as QueryError, DatabaseErrorKind};
+use dotenv_codegen::dotenv;
+use failure::bail;
 use r2d2_diesel::ConnectionManager;
 use rand::Rng;
 use rocket::{Data, Outcome, Request, State};
 use rocket::http::{RawStr, Status};
 use rocket::request::{self, FromParam, FromRequest};
-use rocket_contrib::Template;
+use rocket_codegen::{catch, catchers, get, post, routes};
+use rocket_contrib::templates::Template;
+use serde_derive::{Deserialize, Serialize};
 use syntect::parsing::SyntaxSet;
 use syntect::highlighting::{Color, ThemeSet};
 use syntect::html;
@@ -78,7 +67,7 @@ use syntect::html;
 embed_migrations!();
 pub static MAN_WIDTH: usize = 78;
 fn mk_unknown() -> String { "unknown".to_owned() }
-fn default_meep_root() -> String { "http://localhost:8080".to_owned() }
+fn default_meep_root() -> String { "http://localhost:8000".to_owned() }
 
 pub type Result<T> = std::result::Result<T, failure::Error>;
 pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
@@ -233,10 +222,7 @@ impl From<SyntectPaths> for Highlighting {
 impl Highlighting {
     pub fn syntaxes(&self) -> SyntaxSet {
         self.paths.ss_path.as_ref().ok_or_else(|| ()).and_then(|path| {
-            let mut ss = SyntaxSet::load_defaults_nonewlines();
-            ss.load_syntaxes(path, false).map_err(|_| ())?;
-            ss.link_syntaxes();
-            Ok(ss)
+            SyntaxSet::load_from_folder(path).map_err(|_| ())
         }).unwrap_or_else(|()| SyntaxSet::load_defaults_nonewlines())
     }
 
@@ -382,7 +368,7 @@ fn main() {
         .manage(init_pool(&config))
         .manage(Conf(Arc::new(config)))
         .mount("/", routes![index, paste, view, view_highlighted, view_highlighted_themed])
-        .catch(errors![not_found, internal_server_error])
+        .register(catchers![not_found, internal_server_error])
         .attach(Template::fairing())
         .launch();
 }
@@ -502,9 +488,13 @@ pub fn paste(
     let _ = in_data.stream_to(&mut buf)?;
     let str_data = String::from_utf8(buf)?;
 
+    let mut rng = rand::thread_rng();
     let mut url;
     while {
-        let ident = rand::thread_rng().gen_ascii_chars().take(usize::from(key_length)).collect();
+        let ident = iter::repeat(())
+            .map(|()| rng.sample(rand::distributions::Alphanumeric))
+            .take(usize::from(key_length))
+            .collect();
         url = format!("{}/{}", &conf.meep_root, &ident);
 
         let paste = Paste {
@@ -583,7 +573,7 @@ fn impl_view_highlighted(
     });
 
     let content = match syntax {
-        Some(syntax) => html::highlighted_snippet_for_string(&paste.data, &syntax, theme),
+        Some(syntax) => html::highlighted_html_for_string(&paste.data, &syntaxes.0, syntax, theme),
         None => format!("<pre>{}</pre>", paste.data),
     };
 
@@ -597,17 +587,17 @@ fn impl_view_highlighted(
     Ok(Some(Template::render("hl_view", cxt)))
 }
 
-#[error(404)]
+#[catch(404)]
 pub fn not_found(req: &Request) -> Template {
     let mut map = std::collections::HashMap::new();
-    map.insert("path", req.uri().as_str());
+    map.insert("path", req.uri().to_string());
     Template::render("error/404", &map)
 }
 
-#[error(500)]
+#[catch(500)]
 pub fn internal_server_error(req: &Request) -> Template {
     let mut map = std::collections::HashMap::new();
-    map.insert("path", req.uri().as_str());
+    map.insert("path", req.uri().to_string());
     Template::render("error/500", &map)
 }
 
