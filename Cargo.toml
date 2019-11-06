@@ -17,7 +17,7 @@ travis-ci = { repository = "aatxe/meep" }
 dotenv_codegen = "0.15"
 diesel = { version = "1", features = ["sqlite"] }
 diesel_migrations = "1"
-failure = "0.1"
+fehler = "1.0.0-alpha.1"
 r2d2-diesel = "1.0"
 r2d2 = "0.8"
 rand = "0.7"

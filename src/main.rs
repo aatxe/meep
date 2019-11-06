@@ -43,7 +43,7 @@ use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection;
 use diesel::result::{Error as QueryError, DatabaseErrorKind};
 use dotenv_codegen::dotenv;
-use failure::bail;
+use fehler::{error, throw, throws};
 use r2d2_diesel::ConnectionManager;
 use rand::Rng;
 use rocket::{Data, Outcome, Request, State};
@@ -69,7 +69,6 @@ pub static MAN_WIDTH: usize = 78;
 fn mk_unknown() -> String { "unknown".to_owned() }
 fn default_meep_root() -> String { "http://localhost:8000".to_owned() }
 
-pub type Result<T> = std::result::Result<T, failure::Error>;
 pub type Pool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -88,20 +87,21 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load<P: AsRef<Path>>(path: P) -> Result<Config> {
+    #[throws]
+    pub fn load<P: AsRef<Path>>(path: P) -> Config {
         let contents = File::open(&path).and_then(|mut file| {
             let mut buf = String::new();
             file.read_to_string(&mut buf).map(|_| buf)
         })?;
 
-        Ok(toml::from_str(&contents[..])?)
+        toml::from_str(&contents[..])?
     }
 
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+    #[throws]
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> () {
         let mut file = File::create(&path)?;
         let contents = toml::to_string(self)?;
         file.write_all(contents.as_bytes())?;
-        Ok(())
     }
 }
 
@@ -152,16 +152,17 @@ pub struct PasteId<'a>(Cow<'a, str>);
 impl<'a> FromParam<'a> for PasteId<'a> {
     type Error = &'a RawStr;
 
-    fn from_param(param: &'a RawStr) -> std::result::Result<PasteId<'a>, &'a RawStr> {
+    #[throws(&'a RawStr)]
+    fn from_param(param: &'a RawStr) -> PasteId<'a> {
         let valid = param.chars().all(|c| {
             (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
         });
 
-        if valid {
-            Ok(PasteId(Cow::Borrowed(param)))
-        } else {
-            Err(param)
+        if !valid {
+            throw!(param)
         }
+
+        PasteId(Cow::Borrowed(param))
     }
 }
 
@@ -170,16 +171,17 @@ pub struct Extension<'a>(Cow<'a, str>);
 impl<'a> FromParam<'a> for Extension<'a> {
     type Error = &'a RawStr;
 
-    fn from_param(param: &'a RawStr) -> std::result::Result<Extension<'a>, &'a RawStr> {
+    #[throws(&'a RawStr)]
+    fn from_param(param: &'a RawStr) -> Extension<'a> {
         let valid = param.chars().all(|c| {
             (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '.'
         });
 
-        if valid {
-            Ok(Extension(Cow::Borrowed(param)))
-        } else {
-            Err(param)
+        if !valid {
+            throw!(param)
         }
+
+        Extension(Cow::Borrowed(param))
     }
 }
 
@@ -293,14 +295,15 @@ impl Theme {
 impl<'a> FromParam<'a> for Theme {
     type Error = &'a RawStr;
 
-    fn from_param(param: &'a RawStr) -> std::result::Result<Theme, &'a RawStr> {
-        Ok(match &param.url_decode().map_err(|_| param)?[..] {
+    #[throws(&'a RawStr)]
+    fn from_param(param: &'a RawStr) -> Theme {
+        match &param.url_decode().map_err(|_| param)?[..] {
             "InspiredGitHub" | "gh"    => Theme::InspiredGitHub,
             "SolarizedLight" | "light" => Theme::SolarizedLight,
             "SolarizedDark"  | "dark"  => Theme::SolarizedDark,
 
-            _ => return Err(param),
-        })
+            _ => throw!(param),
+        }
     }
 }
 
@@ -456,10 +459,11 @@ SEE ALSO
     )
 }
 
+#[throws]
 #[post("/", data = "<in_data>")]
 pub fn paste(
     conf: Conf, conn: DbConn, load: State<Load>, key_len: State<KeyLength>, in_data: Data
-) -> Result<String> {
+) -> String {
     use models::*;
     use schema::pastes::dsl::*;
 
@@ -512,61 +516,65 @@ pub fn paste(
             // insertion failed due to primary key constraints, retry.
             Err(QueryError::DatabaseError(DatabaseErrorKind::UniqueViolation, _)) => true,
             // insertion failed for some other reason, bail.
-            Err(e) => bail!(e),
+            Err(e) => throw!(e),
         }
     } { continue }
 
     // we've successfully inserted a new row, so increase the occupied entries count.
     load.occupied.fetch_add(1, Ordering::Relaxed);
-    Ok(url)
+    url
 }
 
+#[throws]
 #[get("/<pid>")]
-pub fn view(conn: DbConn, pid: PasteId) -> Result<Option<String>> {
+pub fn view(conn: DbConn, pid: PasteId) -> Option<String> {
     use models::*;
     use schema::pastes::dsl::*;
 
     let paste = match pastes.find(pid.0).first::<Paste>(&*conn) {
         Ok(res) => res,
-        Err(QueryError::NotFound) => return Ok(None),
-        Err(e) => return Err(e.into()),
+        Err(QueryError::NotFound) => return None,
+        Err(e) => throw!(e),
     };
 
-    Ok(Some(paste.data))
+    Some(paste.data)
 }
 
+#[throws]
 #[get("/<pid>/<ext>")]
 pub fn view_highlighted(
     conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
-) -> Result<Option<Template>> {
-    impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, None)
+) -> Option<Template> {
+    impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, None)?
 }
 
+#[throws]
 #[get("/<pid>/<ext>/<theme>")]
 pub fn view_highlighted_themed(
     conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
     theme: Theme,
-) -> Result<Option<Template>> {
-    impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, Some(theme))
+) -> Option<Template> {
+    impl_view_highlighted(conf, conn, syntaxes, themes, pid, ext, Some(theme))?
 }
 
 // Shared implementation for highlighted view routes.
+#[throws]
 fn impl_view_highlighted(
     conf: Conf, conn: DbConn, syntaxes: Syntaxes, themes: Themes, pid: PasteId, ext: Extension,
     theme: Option<Theme>,
-) -> Result<Option<Template>> {
+) -> Option<Template> {
     use models::*;
     use schema::pastes::dsl::*;
 
     let paste = match pastes.find(pid.0).first::<Paste>(&*conn) {
         Ok(res) => res,
-        Err(QueryError::NotFound) => return Ok(None),
-        Err(e) => return Err(e.into()),
+        Err(QueryError::NotFound) => return None,
+        Err(e) => throw!(e),
     };
 
     let theme_name = theme.and_then(|t| t.str()).unwrap_or(&conf.default_theme);
     let theme = themes.themes.get(theme_name).ok_or_else(|| {
-        failure::err_msg(format!("could not find theme: {}", &conf.default_theme))
+        error!(format!("could not find theme: {}", &conf.default_theme))
     })?;
     let syntax = syntaxes.find_syntax_by_extension(&ext.0).or_else(|| {
         syntaxes.find_syntax_by_first_line(&paste.data)
@@ -584,7 +592,7 @@ fn impl_view_highlighted(
     cxt.insert("contents", content);
     cxt.insert("background", bg_color);
 
-    Ok(Some(Template::render("hl_view", cxt)))
+    Some(Template::render("hl_view", cxt))
 }
 
 #[catch(404)]
